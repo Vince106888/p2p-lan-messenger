@@ -1,0 +1,7 @@
+# peer/config.py
+
+MULTICAST_GROUP = '224.1.1.1'
+MULTICAST_PORT = 5007
+DISCOVERY_INTERVAL = 5  # seconds
+BUFFER_SIZE = 1024
+
