@@ -1,17 +1,17 @@
-# peer/discovery.py
-
-import struct
 import socket
 import threading
 import json
 import time
-from .config import MULTICAST_GROUP, MULTICAST_PORT, DISCOVERY_INTERVAL, BUFFER_SIZE
+
+BROADCAST_IP = '255.255.255.255'
+PORT = 9999
+DISCOVERY_INTERVAL = 2
+BUFFER_SIZE = 1024
 
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # Doesn't actually connect
-        s.connect(('10.255.255.255', 1))
+        s.connect(('8.8.8.8', 80))
         return s.getsockname()[0]
     except Exception:
         return '127.0.0.1'
@@ -30,9 +30,8 @@ class PeerDiscovery:
         threading.Thread(target=self.listen_for_peers, daemon=True).start()
 
     def send_beacons(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        ttl = struct.pack('b', 1)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
         while self.running:
             message = json.dumps({
@@ -40,16 +39,13 @@ class PeerDiscovery:
                 'peer_id': self.peer_id,
                 'ip': self.ip
             })
-            sock.sendto(message.encode(), (MULTICAST_GROUP, MULTICAST_PORT))
+            sock.sendto(message.encode(), (BROADCAST_IP, PORT))
             time.sleep(DISCOVERY_INTERVAL)
 
     def listen_for_peers(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind(('', MULTICAST_PORT))
-
-        mreq = socket.inet_aton(MULTICAST_GROUP) + socket.inet_aton(self.ip)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        sock.bind(('', PORT))
 
         while self.running:
             try:
