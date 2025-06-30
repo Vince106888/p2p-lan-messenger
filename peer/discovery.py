@@ -39,6 +39,7 @@ class PeerDiscovery:
                 'peer_id': self.peer_id,
                 'ip': self.ip
             })
+            print(f"[BEACON] Sending discovery message: {message} → {BROADCAST_IP}:{PORT}")
             sock.sendto(message.encode(), (BROADCAST_IP, PORT))
             time.sleep(DISCOVERY_INTERVAL)
 
