@@ -1,18 +1,32 @@
 # main.py
-
+import os
+import time
+import uuid
+import logging
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, scrolledtext
+from tkinter import ttk
+
 from peer.discovery import PeerDiscovery
 from peer.messaging import PeerMessenger
 from peer.file_transfer import SecureFileReceiver, send_file
-import uuid
-import time
-import threading
 
+# ─────────────── Setup logs ───────────────
+os.makedirs("logs", exist_ok=True)
+
+logging.basicConfig(
+    filename='logs/p2p.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# ─────────────── GUI Application ───────────────
 class P2PGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("P2P LAN Messenger")
+        self.root.title("🚀 P2P LAN Messenger")
+        self.root.geometry("700x500")
+        self.root.resizable(False, False)
 
         self.peer_id = str(uuid.uuid4())[:8]
         self.discovery = PeerDiscovery(self.peer_id)
@@ -26,31 +40,41 @@ class P2PGUI:
         self.build_ui()
         self.refresh_peers_loop()
 
-    def build_ui(self):
-        tk.Label(self.root, text=f"Your Peer ID: {self.peer_id}", fg="blue").pack(pady=5)
+        logging.info(f"[SYSTEM] Peer {self.peer_id} started with IP {self.discovery.ip}")
 
-        # Peer list
-        self.peer_listbox = tk.Listbox(self.root, width=50)
+    def build_ui(self):
+        top_frame = tk.Frame(self.root)
+        top_frame.pack(pady=10)
+
+        tk.Label(top_frame, text=f"Your Peer ID: {self.peer_id}", fg="blue", font=("Arial", 12, "bold")).pack()
+
+        self.peer_listbox = tk.Listbox(self.root, width=80, height=10, font=("Courier", 10))
         self.peer_listbox.pack(padx=10, pady=5)
 
-        # Buttons
         btn_frame = tk.Frame(self.root)
-        btn_frame.pack(pady=5)
+        btn_frame.pack(pady=10)
 
-        tk.Button(btn_frame, text="Send Message", command=self.send_message_gui).grid(row=0, column=0, padx=5)
-        tk.Button(btn_frame, text="Send File", command=self.send_file_gui).grid(row=0, column=1, padx=5)
-        tk.Button(btn_frame, text="Refresh Peers", command=self.refresh_peers_gui).grid(row=0, column=2, padx=5)
+        ttk.Button(btn_frame, text="✉️ Send Message", command=self.send_message_gui).grid(row=0, column=0, padx=10)
+        ttk.Button(btn_frame, text="📁 Send File", command=self.send_file_gui).grid(row=0, column=1, padx=10)
+        ttk.Button(btn_frame, text="🔄 Refresh Peers", command=self.refresh_peers_gui).grid(row=0, column=2, padx=10)
 
-        # Logs
-        tk.Label(self.root, text="Logs").pack()
-        self.log_area = scrolledtext.ScrolledText(self.root, height=10, width=60, state='disabled')
+        separator = ttk.Separator(self.root, orient='horizontal')
+        separator.pack(fill='x', pady=10)
+
+        tk.Label(self.root, text="📜 Logs", font=("Arial", 11, "bold")).pack()
+        self.log_area = scrolledtext.ScrolledText(self.root, height=10, width=85, state='disabled', font=("Consolas", 9))
         self.log_area.pack(padx=10, pady=5)
 
     def log(self, text):
+        timestamp = time.strftime('%H:%M:%S')
+        message = f"{timestamp} - {text}"
+
         self.log_area.configure(state='normal')
-        self.log_area.insert(tk.END, f"{time.strftime('%H:%M:%S')} - {text}\n")
+        self.log_area.insert(tk.END, message + "\n")
         self.log_area.configure(state='disabled')
         self.log_area.see(tk.END)
+
+        logging.info(text)
 
     def refresh_peers_gui(self):
         self.peer_listbox.delete(0, tk.END)
@@ -90,7 +114,9 @@ class P2PGUI:
                 send_file(peer_ip, filepath)
                 self.log(f"Sent file to {peer_ip}: {filepath}")
             except Exception as e:
+                self.log(f"[ERROR] Failed to send file: {e}")
                 messagebox.showerror("File Send Error", str(e))
+
 
 def run_gui():
     root = tk.Tk()
@@ -98,11 +124,14 @@ def run_gui():
     root.protocol("WM_DELETE_WINDOW", lambda: on_close(app, root))
     root.mainloop()
 
+
 def on_close(app, root):
+    logging.info("[SYSTEM] Peer shutting down.")
     app.discovery.stop()
     app.messenger.stop_server()
     app.receiver.stop()
     root.destroy()
+
 
 if __name__ == '__main__':
     run_gui()
