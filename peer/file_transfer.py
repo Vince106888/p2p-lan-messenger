@@ -1,107 +1,105 @@
 import socket
 import threading
 import os
-from peer.crypto_utils import (
-    generate_private_key,
-    generate_public_key,
-    compute_shared_key,
-    aes_encrypt,
-    aes_decrypt
-)
 
-PORT = 9000
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+from Crypto.Util.Padding import pad, unpad
+
+PORT = 9998
 BUFFER_SIZE = 4096
 
 class SecureFileReceiver:
-    def __init__(self):
+    def __init__(self, app=None):
         self.running = False
+        self.app = app  # Reference to GUI app for logging
 
     def start(self):
         self.running = True
-        threading.Thread(target=self.listen, daemon=True).start()
+        threading.Thread(target=self.listen_for_files, daemon=True).start()
+        if self.app:
+            self.app.log("[RECEIVER] Secure file receiver started on port 9998")
+        else:
+            print("[RECEIVER] Secure file receiver started on port 9998")
 
     def stop(self):
         self.running = False
 
-    def listen(self):
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind(('', PORT))
-        server.listen(1)
-        print(f"[RECEIVER] Listening on port {PORT} for incoming encrypted file transfers...")
+    def listen_for_files(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("", PORT))
+        sock.listen(5)
 
         while self.running:
-            conn, addr = server.accept()
-            print(f"[RECEIVER] Connection from {addr}")
-
             try:
-                # 🔐 Step 1: Diffie-Hellman Key Exchange
-                private_key = generate_private_key()
-                public_key = generate_public_key(private_key)
-
-                peer_pub_key = int(conn.recv(BUFFER_SIZE).decode())
-                conn.send(str(public_key).encode())
-
-                shared_key = compute_shared_key(peer_pub_key, private_key)
-
-                # 📦 Step 2: Receive filename
-                filename_size = int(conn.recv(4).decode())
-                filename = conn.recv(filename_size).decode()
-
-                # 📂 Step 3: Receive encrypted file
-                encrypted_data = b''
-                while True:
-                    chunk = conn.recv(BUFFER_SIZE)
-                    if not chunk:
-                        break
-                    encrypted_data += chunk
-
-                plaintext = aes_decrypt(shared_key, encrypted_data)
-
-                # 🗂️ Save to 'received_files/' folder
-                save_dir = "received_files"
-                os.makedirs(save_dir, exist_ok=True)
-                save_path = os.path.join(save_dir, f"received_{filename}")
-
-                with open(save_path, 'wb') as f:
-                    f.write(plaintext)
-
-                print(f"[RECEIVER] File saved as: {save_path}")
+                conn, addr = sock.accept()
+                threading.Thread(target=self.handle_connection, args=(conn, addr), daemon=True).start()
             except Exception as e:
-                print(f"[ERROR] Failed to receive file: {e}")
-            finally:
-                conn.close()
+                if self.app:
+                    self.app.log(f"[RECEIVER ERROR] {e}")
+                else:
+                    print(f"[RECEIVER ERROR] {e}")
+
+    def handle_connection(self, conn, addr):
+        try:
+            # Receive filename length, then filename
+            filename_len = int.from_bytes(conn.recv(2), 'big')
+            filename = conn.recv(filename_len).decode()
+
+            # Receive encrypted key and IV
+            key = conn.recv(32)  # AES-256 key
+            iv = conn.recv(16)
+
+            cipher = AES.new(key, AES.MODE_CBC, iv)
+            encrypted_data = b""
+
+            while True:
+                chunk = conn.recv(BUFFER_SIZE)
+                if not chunk:
+                    break
+                encrypted_data += chunk
+
+            decrypted_data = unpad(cipher.decrypt(encrypted_data), AES.block_size)
+
+            os.makedirs("received_files", exist_ok=True)
+            save_path = os.path.join("received_files", filename)
+            with open(save_path, 'wb') as f:
+                f.write(decrypted_data)
+
+            msg = f"[RECEIVED] File '{filename}' from {addr[0]} saved to 'received_files/'"
+            if self.app:
+                self.app.log(msg)
+            else:
+                print(msg)
+
+        except Exception as e:
+            if self.app:
+                self.app.log(f"[RECEIVER ERROR] {e}")
+            else:
+                print(f"[RECEIVER ERROR] {e}")
+        finally:
+            conn.close()
 
 
-def send_file(peer_ip, filepath):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((peer_ip, PORT))
-    print(f"[SENDER] Connected to {peer_ip}:{PORT}")
-
+def send_file(ip, filepath):
     try:
-        # 🔐 Step 1: Diffie-Hellman Key Exchange
-        private_key = generate_private_key()
-        public_key = generate_public_key(private_key)
-
-        sock.send(str(public_key).encode())
-        peer_pub_key = int(sock.recv(BUFFER_SIZE).decode())
-
-        shared_key = compute_shared_key(peer_pub_key, private_key)
-
-        # 📦 Step 2: Send filename
         filename = os.path.basename(filepath)
-        encoded_name = filename.encode()
-        sock.send(str(len(encoded_name)).zfill(4).encode())  # 4-digit length
-        sock.send(encoded_name)
+        key = get_random_bytes(32)
+        iv = get_random_bytes(16)
 
-        # 📂 Step 3: Encrypt and send file
+        cipher = AES.new(key, AES.MODE_CBC, iv)
         with open(filepath, 'rb') as f:
-            data = f.read()
+            plaintext = f.read()
+        encrypted_data = cipher.encrypt(pad(plaintext, AES.block_size))
 
-        encrypted = aes_encrypt(shared_key, data)
-        sock.sendall(encrypted)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect((ip, PORT))
+            sock.send(len(filename.encode()).to_bytes(2, 'big'))
+            sock.send(filename.encode())
+            sock.send(key)
+            sock.send(iv)
+            sock.sendall(encrypted_data)
 
-        print(f"[SENDER] File '{filename}' sent securely to {peer_ip}")
     except Exception as e:
-        print(f"[ERROR] Failed to send file: {e}")
-    finally:
-        sock.close()
+        raise e

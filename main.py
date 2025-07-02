@@ -1,4 +1,3 @@
-# main.py
 import os
 import time
 import uuid
@@ -13,6 +12,7 @@ from peer.file_transfer import SecureFileReceiver, send_file
 
 # ─────────────── Setup logs ───────────────
 os.makedirs("logs", exist_ok=True)
+os.makedirs("received_files", exist_ok=True)
 
 logging.basicConfig(
     filename='logs/p2p.log',
@@ -30,8 +30,8 @@ class P2PGUI:
 
         self.peer_id = str(uuid.uuid4())[:8]
         self.discovery = PeerDiscovery(self.peer_id)
-        self.messenger = PeerMessenger(self.peer_id)
-        self.receiver = SecureFileReceiver()
+        self.messenger = PeerMessenger(self.peer_id, self)
+        self.receiver = SecureFileReceiver(self)
 
         self.discovery.start()
         self.messenger.start_server()
@@ -111,8 +111,12 @@ class P2PGUI:
         filepath = filedialog.askopenfilename(title="Choose File to Send")
         if filepath:
             try:
+                start_time = time.time()
                 send_file(peer_ip, filepath)
-                self.log(f"Sent file to {peer_ip}: {filepath}")
+                end_time = time.time()
+                duration = round(end_time - start_time, 2)
+                filename = os.path.basename(filepath)
+                self.log(f"Sent file '{filename}' to {peer_ip} in {duration} seconds.")
             except Exception as e:
                 self.log(f"[ERROR] Failed to send file: {e}")
                 messagebox.showerror("File Send Error", str(e))

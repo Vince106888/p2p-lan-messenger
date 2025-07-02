@@ -1,47 +1,66 @@
 import socket
 import threading
 
-PORT = 8888  # Chat/message port
+PORT = 8888
 BUFFER_SIZE = 1024
 
 class PeerMessenger:
-    def __init__(self, peer_id):
+    def __init__(self, peer_id, app=None):
         self.peer_id = peer_id
+        self.app = app
         self.running = False
 
     def start_server(self):
         self.running = True
-        thread = threading.Thread(target=self.listen_for_messages, daemon=True)
-        thread.start()
+        threading.Thread(target=self.listen_for_messages, daemon=True).start()
+        if self.app:
+            self.app.log("[MESSENGER] Message server started on port 8888")
+        else:
+            print("[MESSENGER] Message server started on port 8888")
 
     def stop_server(self):
         self.running = False
 
     def listen_for_messages(self):
-        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_sock.bind(('', PORT))
-        server_sock.listen(5)
-
-        print(f"[MESSENGER] Listening for incoming messages on port {PORT}...")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("", PORT))
+        sock.listen(5)
 
         while self.running:
             try:
-                client_sock, addr = server_sock.accept()
-                data = client_sock.recv(BUFFER_SIZE).decode()
-                print(f"\n[MESSAGE] From {addr[0]} → {data}")
-                client_sock.close()
+                conn, addr = sock.accept()
+                threading.Thread(target=self.handle_client, args=(conn, addr), daemon=True).start()
             except Exception as e:
-                print(f"[ERROR] Message receive error: {e}")
+                if self.app:
+                    self.app.log(f"[MESSAGE ERROR] {e}")
+                else:
+                    print(f"[MESSAGE ERROR] {e}")
 
-    def send_message(self, peer_ip, message):
+    def handle_client(self, conn, addr):
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(3)
-            sock.connect((peer_ip, PORT))
-            full_msg = f"{self.peer_id}: {message}"
-            sock.sendall(full_msg.encode())
-            sock.close()
-            print(f"[SENT] Message sent to {peer_ip}")
+            data = conn.recv(BUFFER_SIZE)
+            message = data.decode()
+            msg = f"[MESSAGE RECEIVED] From {addr[0]}: {message}"
+            if self.app:
+                self.app.log(msg)
+            else:
+                print(msg)
         except Exception as e:
-            print(f"[ERROR] Could not send message to {peer_ip}: {e}")
+            if self.app:
+                self.app.log(f"[MESSAGE ERROR] {e}")
+            else:
+                print(f"[MESSAGE ERROR] {e}")
+        finally:
+            conn.close()
+
+    def send_message(self, ip, message):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.connect((ip, PORT))
+                sock.sendall(message.encode())
+        except Exception as e:
+            if self.app:
+                self.app.log(f"[SEND ERROR] Could not send message to {ip}: {e}")
+            else:
+                print(f"[SEND ERROR] Could not send message to {ip}: {e}")
