@@ -34,10 +34,10 @@ class P2PGUI:
         self.receiver = SecureFileReceiver(self)
 
         self.discovery.start()
+        self.build_ui()
         self.messenger.start_server()
         self.receiver.start()
 
-        self.build_ui()
         self.refresh_peers_loop()
 
         logging.info(f"[SYSTEM] Peer {self.peer_id} started with IP {self.discovery.ip}")

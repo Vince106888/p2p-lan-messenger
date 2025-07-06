@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 received_*
 "venv/" 
+logs/
