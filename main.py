@@ -10,7 +10,7 @@ from peer.discovery import PeerDiscovery
 from peer.messaging import PeerMessenger
 from peer.file_transfer import SecureFileReceiver, send_file
 
-# ─────────────── Setup logs ───────────────
+# Setup directories and logs
 os.makedirs("logs", exist_ok=True)
 os.makedirs("received_files", exist_ok=True)
 
@@ -20,13 +20,12 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# ─────────────── GUI Application ───────────────
 class P2PGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("🚀 P2P LAN Messenger")
-        self.root.geometry("700x500")
-        self.root.resizable(False, False)
+        self.root.geometry("800x560")
+        center_window(self.root)
 
         self.peer_id = str(uuid.uuid4())[:8]
         self.discovery = PeerDiscovery(self.peer_id)
@@ -34,46 +33,65 @@ class P2PGUI:
         self.receiver = SecureFileReceiver(self)
 
         self.discovery.start()
-        self.build_ui()
+        self.build_ui()  # Build UI before any log calls
         self.messenger.start_server()
         self.receiver.start()
 
         self.refresh_peers_loop()
-
         logging.info(f"[SYSTEM] Peer {self.peer_id} started with IP {self.discovery.ip}")
 
     def build_ui(self):
-        top_frame = tk.Frame(self.root)
-        top_frame.pack(pady=10)
+        style = ttk.Style()
+        style.theme_use('clam')
 
-        tk.Label(top_frame, text=f"Your Peer ID: {self.peer_id}", fg="blue", font=("Arial", 12, "bold")).pack()
+        # Header
+        header = tk.Label(self.root, text="🚀 P2P LAN Messenger", font=("Arial", 16, "bold"), fg="#24527a")
+        header.pack(pady=(10, 2))
 
-        self.peer_listbox = tk.Listbox(self.root, width=80, height=10, font=("Courier", 10))
-        self.peer_listbox.pack(padx=10, pady=5)
+        subheader = tk.Label(self.root, text=f"Peer ID: {self.peer_id}", font=("Arial", 11), fg="gray")
+        subheader.pack(pady=(0, 8))
 
-        btn_frame = tk.Frame(self.root)
-        btn_frame.pack(pady=10)
+        # Notebook Tabs
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(expand=True, fill="both", padx=10, pady=5)
+
+        # Peers Tab
+        peers_tab = ttk.Frame(notebook)
+        self.peer_listbox = tk.Listbox(peers_tab, width=90, height=15, font=("Courier", 10))
+        self.peer_listbox.pack(padx=10, pady=10)
+
+        btn_frame = tk.Frame(peers_tab)
+        btn_frame.pack(pady=5)
 
         ttk.Button(btn_frame, text="✉️ Send Message", command=self.send_message_gui).grid(row=0, column=0, padx=10)
         ttk.Button(btn_frame, text="📁 Send File", command=self.send_file_gui).grid(row=0, column=1, padx=10)
-        ttk.Button(btn_frame, text="🔄 Refresh Peers", command=self.refresh_peers_gui).grid(row=0, column=2, padx=10)
+        ttk.Button(btn_frame, text="🔄 Refresh", command=self.refresh_peers_gui).grid(row=0, column=2, padx=10)
 
-        separator = ttk.Separator(self.root, orient='horizontal')
-        separator.pack(fill='x', pady=10)
+        notebook.add(peers_tab, text="📡 Peers")
 
-        tk.Label(self.root, text="📜 Logs", font=("Arial", 11, "bold")).pack()
-        self.log_area = scrolledtext.ScrolledText(self.root, height=10, width=85, state='disabled', font=("Consolas", 9))
-        self.log_area.pack(padx=10, pady=5)
+        # Logs Tab
+        logs_tab = ttk.Frame(notebook)
+        self.log_area = scrolledtext.ScrolledText(logs_tab, height=20, width=95, state='disabled', font=("Consolas", 9))
+        self.log_area.pack(padx=10, pady=10)
+        notebook.add(logs_tab, text="📜 Logs")
+
+        # Status Bar
+        self.status_var = tk.StringVar()
+        self.update_status()
+        status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor='w')
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+    def update_status(self):
+        peer_count = len(self.discovery.peers)
+        self.status_var.set(f"🌐 Your IP: {self.discovery.ip}   |   Peers online: {peer_count}")
 
     def log(self, text):
         timestamp = time.strftime('%H:%M:%S')
         message = f"{timestamp} - {text}"
-
         self.log_area.configure(state='normal')
         self.log_area.insert(tk.END, message + "\n")
         self.log_area.configure(state='disabled')
         self.log_area.see(tk.END)
-
         logging.info(text)
 
     def refresh_peers_gui(self):
@@ -81,6 +99,7 @@ class P2PGUI:
         for pid, info in self.discovery.peers.items():
             age = round(time.time() - info['last_seen'], 1)
             self.peer_listbox.insert(tk.END, f"{pid} @ {info['ip']} (seen {age}s ago)")
+        self.update_status()
 
     def refresh_peers_loop(self):
         self.refresh_peers_gui()
@@ -113,21 +132,29 @@ class P2PGUI:
             try:
                 start_time = time.time()
                 send_file(peer_ip, filepath)
-                end_time = time.time()
-                duration = round(end_time - start_time, 2)
+                duration = round(time.time() - start_time, 2)
                 filename = os.path.basename(filepath)
                 self.log(f"Sent file '{filename}' to {peer_ip} in {duration} seconds.")
             except Exception as e:
                 self.log(f"[ERROR] Failed to send file: {e}")
                 messagebox.showerror("File Send Error", str(e))
 
+# Utility to center the window
+def center_window(root):
+    root.update_idletasks()
+    width = root.winfo_width()
+    height = root.winfo_height()
+    x = (root.winfo_screenwidth() // 2) - (width // 2)
+    y = (root.winfo_screenheight() // 2) - (height // 2)
+    root.geometry(f"{width}x{height}+{x}+{y}")
 
 def run_gui():
     root = tk.Tk()
+    # Optional: set custom icon
+    # root.iconphoto(False, tk.PhotoImage(file='assets/icon.png'))
     app = P2PGUI(root)
     root.protocol("WM_DELETE_WINDOW", lambda: on_close(app, root))
     root.mainloop()
-
 
 def on_close(app, root):
     logging.info("[SYSTEM] Peer shutting down.")
@@ -135,7 +162,6 @@ def on_close(app, root):
     app.messenger.stop_server()
     app.receiver.stop()
     root.destroy()
-
 
 if __name__ == '__main__':
     run_gui()
