@@ -1,3 +1,4 @@
+# === main.py ===
 import os
 import time
 import uuid
@@ -12,7 +13,6 @@ from peer.file_transfer import SecureFileReceiver, send_file
 from auth.authentication import AuthManager
 from ui.group_ui import GroupTab
 
-# Setup directories and logs
 os.makedirs("logs", exist_ok=True)
 os.makedirs("received_files", exist_ok=True)
 
@@ -48,15 +48,12 @@ class P2PGUI:
         style = ttk.Style()
         style.theme_use("clam")
 
-        # Header
         tk.Label(self.root, text="🚀 P2P LAN Messenger", font=("Segoe UI", 18, "bold"), fg="#234e70").pack(pady=(10, 0))
         tk.Label(self.root, text=f"User: {self.username} | Peer ID: {self.peer_id}", font=("Segoe UI", 11), fg="gray").pack(pady=(0, 8))
 
-        # Notebook layout
         notebook = ttk.Notebook(self.root)
         notebook.pack(expand=True, fill="both", padx=12, pady=5)
 
-        # Peers Tab
         peers_tab = ttk.Frame(notebook)
         self.peer_listbox = tk.Listbox(peers_tab, width=90, height=18, font=("Courier New", 10))
         self.peer_listbox.pack(padx=10, pady=10, fill="both", expand=True)
@@ -70,19 +67,16 @@ class P2PGUI:
 
         notebook.add(peers_tab, text="📡 Peers")
 
-        # Logs Tab
         logs_tab = ttk.Frame(notebook)
         self.log_area = scrolledtext.ScrolledText(logs_tab, height=20, width=95, state='disabled', font=("Consolas", 9))
         self.log_area.pack(padx=10, pady=10, fill="both", expand=True)
         notebook.add(logs_tab, text="📜 Logs")
 
-        # Group Tab
         group_tab = ttk.Frame(notebook)
         self.group_tab = GroupTab(group_tab, self.peer_id, self.log)
         self.group_tab.refresh_groups()
         notebook.add(group_tab, text="📚 Groups")
 
-        # Status bar
         self.status_var = tk.StringVar()
         self.update_status()
         status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor='w', font=("Segoe UI", 9))
@@ -153,7 +147,9 @@ class P2PGUI:
                 self.log(f"[ERROR] Failed to send file: {e}")
                 messagebox.showerror("File Send Error", str(e))
 
-# Center GUI window
+    def prompt_file_accept(self, sender_ip, filename):
+        return messagebox.askyesno("Incoming File", f"{sender_ip} wants to send you '{filename}'. Accept?")
+
 def center_window(root):
     root.update_idletasks()
     width, height = root.winfo_width(), root.winfo_height()
@@ -161,12 +157,11 @@ def center_window(root):
     y = (root.winfo_screenheight() // 2) - (height // 2)
     root.geometry(f"{width}x{height}+{x}+{y}")
 
-# GUI Entry: Login/Register
 def run_gui():
     auth = AuthManager()
     root = tk.Tk()
-
     username = None
+
     while not username:
         action = messagebox.askquestion("Login/Register", "Do you want to log in? (No = Register)")
         if action == "yes":
