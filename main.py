@@ -28,8 +28,8 @@ class P2PGUI:
         self.username = username
         self.peer_id = str(uuid.uuid4())[:8]
 
-        self.root.title(f"🚀 P2P LAN Messenger - {self.username}")
-        self.root.geometry("800x560")
+        self.root.title(f"🚀 P2P LAN Messenger – {self.username}")
+        self.root.geometry("900x600")
         center_window(self.root)
 
         self.discovery = PeerDiscovery(self.peer_id, self.username)
@@ -46,58 +46,51 @@ class P2PGUI:
 
     def build_ui(self):
         style = ttk.Style()
-        style.theme_use('clam')
+        style.theme_use("clam")
 
-        header = tk.Label(self.root, text="🚀 P2P LAN Messenger", font=("Arial", 16, "bold"), fg="#24527a")
-        header.pack(pady=(10, 2))
+        # Header
+        tk.Label(self.root, text="🚀 P2P LAN Messenger", font=("Segoe UI", 18, "bold"), fg="#234e70").pack(pady=(10, 0))
+        tk.Label(self.root, text=f"User: {self.username} | Peer ID: {self.peer_id}", font=("Segoe UI", 11), fg="gray").pack(pady=(0, 8))
 
-        subheader = tk.Label(
-            self.root,
-            text=f"User: {self.username} | Peer ID: {self.peer_id}",
-            font=("Arial", 11),
-            fg="gray"
-        )
-        subheader.pack(pady=(0, 8))
-
+        # Notebook layout
         notebook = ttk.Notebook(self.root)
-        notebook.pack(expand=True, fill="both", padx=10, pady=5)
+        notebook.pack(expand=True, fill="both", padx=12, pady=5)
 
-        # Peers tab
+        # Peers Tab
         peers_tab = ttk.Frame(notebook)
-        self.peer_listbox = tk.Listbox(peers_tab, width=90, height=15, font=("Courier", 10))
-        self.peer_listbox.pack(padx=10, pady=10)
+        self.peer_listbox = tk.Listbox(peers_tab, width=90, height=18, font=("Courier New", 10))
+        self.peer_listbox.pack(padx=10, pady=10, fill="both", expand=True)
 
         btn_frame = tk.Frame(peers_tab)
-        btn_frame.pack(pady=5)
+        btn_frame.pack(pady=(0, 10))
 
-        ttk.Button(btn_frame, text="✉️ Send Message", command=self.send_message_gui).grid(row=0, column=0, padx=10)
+        ttk.Button(btn_frame, text="✉️ Open Chat", command=self.open_chat_window).grid(row=0, column=0, padx=10)
         ttk.Button(btn_frame, text="📁 Send File", command=self.send_file_gui).grid(row=0, column=1, padx=10)
         ttk.Button(btn_frame, text="🔄 Refresh", command=self.refresh_peers_gui).grid(row=0, column=2, padx=10)
 
         notebook.add(peers_tab, text="📡 Peers")
 
-        # Logs tab
+        # Logs Tab
         logs_tab = ttk.Frame(notebook)
         self.log_area = scrolledtext.ScrolledText(logs_tab, height=20, width=95, state='disabled', font=("Consolas", 9))
-        self.log_area.pack(padx=10, pady=10)
+        self.log_area.pack(padx=10, pady=10, fill="both", expand=True)
         notebook.add(logs_tab, text="📜 Logs")
 
-        # Group Collaboration tab
+        # Group Tab
         group_tab = ttk.Frame(notebook)
-        notebook.add(group_tab, text="📚 Groups")
-
         self.group_tab = GroupTab(group_tab, self.peer_id, self.log)
         self.group_tab.refresh_groups()
+        notebook.add(group_tab, text="📚 Groups")
 
         # Status bar
         self.status_var = tk.StringVar()
         self.update_status()
-        status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor='w')
+        status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor='w', font=("Segoe UI", 9))
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def update_status(self):
         peer_count = len(self.discovery.peers)
-        self.status_var.set(f"🌐 Your IP: {self.discovery.ip}   |   Peers online: {peer_count}")
+        self.status_var.set(f"🌐 IP: {self.discovery.ip}   |   Peers Online: {peer_count}")
 
     def log(self, text):
         timestamp = time.strftime('%H:%M:%S')
@@ -110,7 +103,8 @@ class P2PGUI:
 
     def refresh_peers_gui(self):
         self.peer_listbox.delete(0, tk.END)
-        for pid, info in self.discovery.peers.items():
+        sorted_peers = sorted(self.discovery.peers.items(), key=lambda x: x[1].get('username', ''))
+        for pid, info in sorted_peers:
             age = round(time.time() - info['last_seen'], 1)
             name = info.get('username', 'Unknown')
             self.peer_listbox.insert(tk.END, f"{name} ({pid}) @ {info['ip']} (seen {age}s ago)")
@@ -123,33 +117,38 @@ class P2PGUI:
     def get_selected_peer_ip(self):
         selection = self.peer_listbox.curselection()
         if not selection:
-            messagebox.showwarning("No Peer", "Please select a peer.")
+            messagebox.showwarning("No Peer Selected", "Please select a peer from the list.")
             return None
         selected = self.peer_listbox.get(selection[0])
         ip = selected.split('@')[1].split('(')[0].strip()
         return ip
 
-    def send_message_gui(self):
+    def open_chat_window(self):
         peer_ip = self.get_selected_peer_ip()
         if not peer_ip:
             return
-        message = simpledialog.askstring("Send Message", "Enter your message:")
-        if message:
-            self.messenger.send_message(peer_ip, f"[{self.username}]: {message}")
-            self.log(f"Sent message to {peer_ip}: {message}")
+        peer_name = self.get_peer_name(peer_ip)
+        self.messenger.open_chat(peer_ip, peer_name)
+        self.log(f"[CHAT] Opened chat with {peer_name} @ {peer_ip}")
+
+    def get_peer_name(self, ip):
+        for pid, info in self.discovery.peers.items():
+            if info['ip'] == ip:
+                return info.get('username', 'Unknown')
+        return "Unknown"
 
     def send_file_gui(self):
         peer_ip = self.get_selected_peer_ip()
         if not peer_ip:
             return
-        filepath = filedialog.askopenfilename(title="Choose File to Send")
+        filepath = filedialog.askopenfilename(title="Select File to Send")
         if filepath:
             try:
                 start_time = time.time()
                 send_file(peer_ip, filepath, gui_app=self)
                 duration = round(time.time() - start_time, 2)
                 filename = os.path.basename(filepath)
-                self.log(f"Sent file '{filename}' to {peer_ip} in {duration} seconds.")
+                self.log(f"File '{filename}' sent to {peer_ip} in {duration}s.")
             except Exception as e:
                 self.log(f"[ERROR] Failed to send file: {e}")
                 messagebox.showerror("File Send Error", str(e))
@@ -157,42 +156,40 @@ class P2PGUI:
 # Center GUI window
 def center_window(root):
     root.update_idletasks()
-    width = root.winfo_width()
-    height = root.winfo_height()
+    width, height = root.winfo_width(), root.winfo_height()
     x = (root.winfo_screenwidth() // 2) - (width // 2)
     y = (root.winfo_screenheight() // 2) - (height // 2)
     root.geometry(f"{width}x{height}+{x}+{y}")
 
-# GUI Runner with Auth
+# GUI Entry: Login/Register
 def run_gui():
     auth = AuthManager()
     root = tk.Tk()
 
     username = None
     while not username:
-        action = messagebox.askquestion("Login/Register", "Do you want to log in? (No to register)")
+        action = messagebox.askquestion("Login/Register", "Do you want to log in? (No = Register)")
         if action == "yes":
             u = simpledialog.askstring("Login", "Enter username:")
-            p = simpledialog.askstring("Password", "Enter password:", show='*')
+            p = simpledialog.askstring("Password", "Enter password:", show="*")
             if auth.login_user(u, p):
                 username = u
-                messagebox.showinfo("Login Success", f"Welcome back, {u}")
+                messagebox.showinfo("Login Successful", f"Welcome back, {u}!")
             else:
-                messagebox.showerror("Login Failed", "Invalid credentials or IP mismatch.")
+                messagebox.showerror("Login Failed", "Incorrect credentials or IP mismatch.")
         else:
             u = simpledialog.askstring("Register", "Choose a username:")
-            p = simpledialog.askstring("Register", "Choose a password:", show='*')
+            p = simpledialog.askstring("Register", "Choose a password:", show="*")
             if auth.register_user(u, p):
                 username = u
-                messagebox.showinfo("Registration Success", f"Welcome, {u}")
+                messagebox.showinfo("Registration Complete", f"Welcome, {u}!")
             else:
-                messagebox.showerror("Registration Failed", "Username already exists.")
+                messagebox.showerror("Registration Error", "Username already exists.")
 
     app = P2PGUI(root, username)
     root.protocol("WM_DELETE_WINDOW", lambda: on_close(app, root))
     root.mainloop()
 
-# Cleanup
 def on_close(app, root):
     logging.info("[SYSTEM] Peer shutting down.")
     app.discovery.stop()
@@ -200,5 +197,5 @@ def on_close(app, root):
     app.receiver.stop()
     root.destroy()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run_gui()

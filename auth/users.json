@@ -2,5 +2,9 @@
     "vince": {
         "password": "$2b$12$XBzNTweOIsITy7EXkZiI0eOr7TaIX6jmKkNpM7bWjfsp2ejfkTrsy",
         "ip": "192.168.0.105"
+    },
+    "nyamao": {
+        "password": "$2b$12$2/pIgpuKmY7mNOtDBOZ05ucY73S1BiFa.6ih1BdhCfbJCCKhRm2Am",
+        "ip": "192.168.0.102"
     }
 }

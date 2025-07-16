@@ -3,3 +3,4 @@ __pycache__/
 received_*
 "venv/" 
 logs/
+venv/
