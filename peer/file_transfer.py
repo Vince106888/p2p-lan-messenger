@@ -38,12 +38,21 @@ class SecureFileReceiver:
 
     def handle_connection(self, conn, addr):
         try:
-            filename_len = int.from_bytes(conn.recv(2), 'big')
+            # Receive filename length and filename
+            filename_len_bytes = conn.recv(2)
+            if not filename_len_bytes:
+                self._log("[RECEIVER ERROR] No filename length received")
+                conn.close()
+                return
+
+            filename_len = int.from_bytes(filename_len_bytes, 'big')
             filename = conn.recv(filename_len).decode()
 
+            # Receive encryption key and IV
             key = conn.recv(32)
             iv = conn.recv(16)
 
+            # Prompt GUI user
             if self.app:
                 confirm = self.app.prompt_file_accept(addr[0], filename)
                 if not confirm:
@@ -51,16 +60,28 @@ class SecureFileReceiver:
                     conn.close()
                     return
 
+            # Prepare for decryption
             cipher = AES.new(key, AES.MODE_CBC, iv)
             encrypted_data = b""
 
+            # Receive encrypted data
             while True:
-                chunk = conn.recv(BUFFER_SIZE)
-                if not chunk:
+                try:
+                    chunk = conn.recv(BUFFER_SIZE)
+                    if not chunk:
+                        break
+                    encrypted_data += chunk
+                except Exception as e:
+                    self._log(f"[RECV ERROR] {e}")
                     break
-                encrypted_data += chunk
 
-            decrypted_data = unpad(cipher.decrypt(encrypted_data), AES.block_size)
+            # Decrypt and save
+            try:
+                decrypted_data = unpad(cipher.decrypt(encrypted_data), AES.block_size)
+            except ValueError as e:
+                self._log(f"[DECRYPT ERROR] Padding issue or corrupt file: {e}")
+                conn.close()
+                return
 
             os.makedirs("received_files", exist_ok=True)
             save_path = os.path.join("received_files", filename)
@@ -68,7 +89,12 @@ class SecureFileReceiver:
                 f.write(decrypted_data)
 
             self._log(f"[RECEIVED] '{filename}' saved from {addr[0]} ➜ 'received_files/'")
-            conn.send(b"RECEIVED")
+
+            # Acknowledge
+            try:
+                conn.send(b"RECEIVED")
+            except:
+                self._log("[WARNING] Failed to send ACK")
 
         except Exception as e:
             self._log(f"[RECEIVER ERROR] {e}")
@@ -94,13 +120,16 @@ def send_file(ip, filepath, gui_app=None):
         total_size = len(encrypted_data)
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(15)
             sock.connect((ip, PORT))
 
+            # Send metadata
             sock.send(len(filename.encode()).to_bytes(2, 'big'))
             sock.send(filename.encode())
             sock.send(key)
             sock.send(iv)
 
+            # Send file data
             sent = 0
             while sent < total_size:
                 chunk = encrypted_data[sent:sent + BUFFER_SIZE]
@@ -112,13 +141,14 @@ def send_file(ip, filepath, gui_app=None):
                     gui_app.status_var.set(f"🚀 Sending '{filename}' to {ip}... {progress}%")
                     gui_app.root.update_idletasks()
 
-            ack = sock.recv(10).decode()
-            if ack == "RECEIVED":
-                if gui_app:
+            # Wait for ACK
+            try:
+                ack = sock.recv(10).decode()
+                if ack == "RECEIVED" and gui_app:
                     gui_app.log(f"[ACK] {ip} confirmed file delivery of '{filename}'")
-            else:
+            except:
                 if gui_app:
-                    gui_app.log(f"[WARN] No confirmation received for '{filename}'")
+                    gui_app.log(f"[WARN] No ACK received for '{filename}'")
 
             if gui_app:
                 gui_app.status_var.set("✅ Idle")

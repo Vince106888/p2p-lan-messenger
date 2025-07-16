@@ -28,9 +28,10 @@ class ChatWindow:
         formatted = f"[{timestamp}] {sender}: {message}"
         if tag:
             formatted += f"   📎 {tag}"
-        self.chat_area.config(state='normal')
+
+        self.chat_area.configure(state='normal')
         self.chat_area.insert(tk.END, formatted + "\n")
-        self.chat_area.config(state='disabled')
+        self.chat_area.configure(state='disabled')
         self.chat_area.see(tk.END)
 
     def send_message(self):

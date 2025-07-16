@@ -4,3 +4,4 @@ received_*
 "venv/" 
 logs/
 venv/
+users.json
