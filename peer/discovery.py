@@ -32,12 +32,13 @@ def get_broadcast_ip():
     return '.'.join(parts)
 
 class PeerDiscovery:
-    def __init__(self, peer_id):
+    def __init__(self, peer_id, username):  # ✅ Updated to accept username
         self.peer_id = peer_id
+        self.username = username
         self.ip = get_local_ip()
         self.broadcast_ip = get_broadcast_ip()
         self.running = False
-        self.peers = {}  # Format: {peer_id: {"ip": x.x.x.x, "last_seen": timestamp}}
+        self.peers = {}  # {peer_id: {"ip": ..., "last_seen": ..., "username": ...}}
 
     def start(self):
         self.running = True
@@ -55,7 +56,8 @@ class PeerDiscovery:
             message = json.dumps({
                 'type': 'HELLO',
                 'peer_id': self.peer_id,
-                'ip': self.ip
+                'ip': self.ip,
+                'username': self.username  # ✅ Include username
             })
 
             try:
@@ -84,13 +86,15 @@ class PeerDiscovery:
                 ):
                     peer_id = peer_data['peer_id']
                     peer_ip = peer_data['ip']
+                    username = peer_data.get('username', 'Unknown')
 
                     # Update or add peer
                     self.peers[peer_id] = {
                         'ip': peer_ip,
-                        'last_seen': time.time()
+                        'last_seen': time.time(),
+                        'username': username
                     }
 
-                    print(f"[DISCOVERY] Found peer: {peer_id} @ {peer_ip}")
+                    print(f"[DISCOVERY] Found peer: {username} ({peer_id}) @ {peer_ip}")
             except Exception as e:
                 print(f"[ERROR] Discovery receive failed: {e}")

@@ -9,6 +9,8 @@ from tkinter import ttk
 from peer.discovery import PeerDiscovery
 from peer.messaging import PeerMessenger
 from peer.file_transfer import SecureFileReceiver, send_file
+from auth.authentication import AuthManager
+from ui.group_ui import GroupTab
 
 # Setup directories and logs
 os.makedirs("logs", exist_ok=True)
@@ -21,41 +23,46 @@ logging.basicConfig(
 )
 
 class P2PGUI:
-    def __init__(self, root):
+    def __init__(self, root, username):
         self.root = root
-        self.root.title("🚀 P2P LAN Messenger")
+        self.username = username
+        self.peer_id = str(uuid.uuid4())[:8]
+
+        self.root.title(f"🚀 P2P LAN Messenger - {self.username}")
         self.root.geometry("800x560")
         center_window(self.root)
 
-        self.peer_id = str(uuid.uuid4())[:8]
-        self.discovery = PeerDiscovery(self.peer_id)
+        self.discovery = PeerDiscovery(self.peer_id, self.username)
         self.messenger = PeerMessenger(self.peer_id, self)
         self.receiver = SecureFileReceiver(self)
 
         self.discovery.start()
-        self.build_ui()  # Build UI before any log calls
+        self.build_ui()
         self.messenger.start_server()
         self.receiver.start()
 
         self.refresh_peers_loop()
-        logging.info(f"[SYSTEM] Peer {self.peer_id} started with IP {self.discovery.ip}")
+        logging.info(f"[SYSTEM] Peer {self.peer_id} ({self.username}) started with IP {self.discovery.ip}")
 
     def build_ui(self):
         style = ttk.Style()
         style.theme_use('clam')
 
-        # Header
         header = tk.Label(self.root, text="🚀 P2P LAN Messenger", font=("Arial", 16, "bold"), fg="#24527a")
         header.pack(pady=(10, 2))
 
-        subheader = tk.Label(self.root, text=f"Peer ID: {self.peer_id}", font=("Arial", 11), fg="gray")
+        subheader = tk.Label(
+            self.root,
+            text=f"User: {self.username} | Peer ID: {self.peer_id}",
+            font=("Arial", 11),
+            fg="gray"
+        )
         subheader.pack(pady=(0, 8))
 
-        # Notebook Tabs
         notebook = ttk.Notebook(self.root)
         notebook.pack(expand=True, fill="both", padx=10, pady=5)
 
-        # Peers Tab
+        # Peers tab
         peers_tab = ttk.Frame(notebook)
         self.peer_listbox = tk.Listbox(peers_tab, width=90, height=15, font=("Courier", 10))
         self.peer_listbox.pack(padx=10, pady=10)
@@ -69,13 +76,20 @@ class P2PGUI:
 
         notebook.add(peers_tab, text="📡 Peers")
 
-        # Logs Tab
+        # Logs tab
         logs_tab = ttk.Frame(notebook)
         self.log_area = scrolledtext.ScrolledText(logs_tab, height=20, width=95, state='disabled', font=("Consolas", 9))
         self.log_area.pack(padx=10, pady=10)
         notebook.add(logs_tab, text="📜 Logs")
 
-        # Status Bar
+        # Group Collaboration tab
+        group_tab = ttk.Frame(notebook)
+        notebook.add(group_tab, text="📚 Groups")
+
+        self.group_tab = GroupTab(group_tab, self.peer_id, self.log)
+        self.group_tab.refresh_groups()
+
+        # Status bar
         self.status_var = tk.StringVar()
         self.update_status()
         status_bar = tk.Label(self.root, textvariable=self.status_var, bd=1, relief=tk.SUNKEN, anchor='w')
@@ -98,7 +112,8 @@ class P2PGUI:
         self.peer_listbox.delete(0, tk.END)
         for pid, info in self.discovery.peers.items():
             age = round(time.time() - info['last_seen'], 1)
-            self.peer_listbox.insert(tk.END, f"{pid} @ {info['ip']} (seen {age}s ago)")
+            name = info.get('username', 'Unknown')
+            self.peer_listbox.insert(tk.END, f"{name} ({pid}) @ {info['ip']} (seen {age}s ago)")
         self.update_status()
 
     def refresh_peers_loop(self):
@@ -120,7 +135,7 @@ class P2PGUI:
             return
         message = simpledialog.askstring("Send Message", "Enter your message:")
         if message:
-            self.messenger.send_message(peer_ip, message)
+            self.messenger.send_message(peer_ip, f"[{self.username}]: {message}")
             self.log(f"Sent message to {peer_ip}: {message}")
 
     def send_file_gui(self):
@@ -131,7 +146,7 @@ class P2PGUI:
         if filepath:
             try:
                 start_time = time.time()
-                send_file(peer_ip, filepath)
+                send_file(peer_ip, filepath, gui_app=self)
                 duration = round(time.time() - start_time, 2)
                 filename = os.path.basename(filepath)
                 self.log(f"Sent file '{filename}' to {peer_ip} in {duration} seconds.")
@@ -139,7 +154,7 @@ class P2PGUI:
                 self.log(f"[ERROR] Failed to send file: {e}")
                 messagebox.showerror("File Send Error", str(e))
 
-# Utility to center the window
+# Center GUI window
 def center_window(root):
     root.update_idletasks()
     width = root.winfo_width()
@@ -148,14 +163,36 @@ def center_window(root):
     y = (root.winfo_screenheight() // 2) - (height // 2)
     root.geometry(f"{width}x{height}+{x}+{y}")
 
+# GUI Runner with Auth
 def run_gui():
+    auth = AuthManager()
     root = tk.Tk()
-    # Optional: set custom icon
-    # root.iconphoto(False, tk.PhotoImage(file='assets/icon.png'))
-    app = P2PGUI(root)
+
+    username = None
+    while not username:
+        action = messagebox.askquestion("Login/Register", "Do you want to log in? (No to register)")
+        if action == "yes":
+            u = simpledialog.askstring("Login", "Enter username:")
+            p = simpledialog.askstring("Password", "Enter password:", show='*')
+            if auth.login_user(u, p):
+                username = u
+                messagebox.showinfo("Login Success", f"Welcome back, {u}")
+            else:
+                messagebox.showerror("Login Failed", "Invalid credentials or IP mismatch.")
+        else:
+            u = simpledialog.askstring("Register", "Choose a username:")
+            p = simpledialog.askstring("Register", "Choose a password:", show='*')
+            if auth.register_user(u, p):
+                username = u
+                messagebox.showinfo("Registration Success", f"Welcome, {u}")
+            else:
+                messagebox.showerror("Registration Failed", "Username already exists.")
+
+    app = P2PGUI(root, username)
     root.protocol("WM_DELETE_WINDOW", lambda: on_close(app, root))
     root.mainloop()
 
+# Cleanup
 def on_close(app, root):
     logging.info("[SYSTEM] Peer shutting down.")
     app.discovery.stop()
